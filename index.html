@@ -182,12 +182,6 @@
   #status-msg.error { color: var(--danger); }
   #status-msg.ok { color: var(--ok); }
 
-  .ai-card .actions-line { margin-top: 4px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-  .ai-card .btn-generate { padding: 9px 16px; font-size: 0.86rem; }
-  #ai-status { font-size: 0.8rem; line-height: 1.5; }
-  #ai-status.error { color: var(--danger); }
-  #ai-status.ok { color: var(--ok); }
-
   .btn-generate {
     flex: none;
     font: inherit;
@@ -309,7 +303,7 @@
   @media (max-width: 560px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
   label { font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); }
   label .opt { font-weight: 400; color: var(--muted); }
-  input[type="text"], input[type="password"], textarea, select {
+  input[type="text"], textarea, select {
     width: 100%;
     font: inherit;
     font-size: 0.92rem;
@@ -502,7 +496,6 @@
   <nav class="rail" aria-label="Section navigation">
     <p class="rail-title">Sections</p>
     <a href="#sec-start"><span class="n mono">—</span>Start here</a>
-    <a href="#sec-ai"><span class="n mono">✦</span>Draft with AI</a>
     <a href="#sec-1"><span class="n mono">01</span>Business need</a>
     <a href="#sec-2"><span class="n mono">02</span>Objectives &amp; KPIs</a>
     <a href="#sec-3"><span class="n mono">03</span>Stakeholders</a>
@@ -529,24 +522,6 @@
         <button type="button" class="link-btn" id="clear-btn">Clear all fields</button>
       </div>
     </div>
-
-    <section class="card ai-card" id="sec-ai">
-      <div class="card-head"><h3 class="serif">Draft with AI</h3><span class="opt">optional</span></div>
-      <p class="card-babok">Sends your notes directly from this browser to Anthropic's API to draft a first pass. Nothing goes through any server of ours — there isn't one.</p>
-      <div class="field">
-        <label for="ai-api-key">Anthropic API key</label>
-        <input type="password" id="ai-api-key" placeholder="sk-ant-..." autocomplete="off" />
-        <span class="field-note">Stored only in this browser (localStorage). Get one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a>.</span>
-      </div>
-      <div class="field">
-        <label for="ai-notes">Rough notes, meeting notes, or a feature description</label>
-        <textarea id="ai-notes" placeholder="e.g. We want customers to freeze/unfreeze their own debit card from the app instead of calling support..."></textarea>
-      </div>
-      <div class="actions-line">
-        <button type="button" class="btn-generate" id="ai-draft-btn">Draft with AI</button>
-        <span id="ai-status"></span>
-      </div>
-    </section>
 
     <div class="result-banner" id="result-banner">
       <span>✓</span>
@@ -1364,219 +1339,6 @@ docx/dist/index.cjs:
    'regulatoryRequirements', 'businessRules', 'dataRequirements', 'risks', 'approvers', 'glossary'
   ].forEach(function (k) { reps[k].addRow(''); });
   addEpicBlock({});
-
-  /* ---------------- AI-assisted draft (optional, calls Anthropic directly) ---------------- */
-  var AI_MODEL = 'claude-opus-5';
-  var AI_ENDPOINT = 'https://api.anthropic.com/v1/messages';
-
-  var AI_SCHEMA_DOC = [
-    'Respond with ONLY a single JSON object -- no markdown code fences, no commentary before or after.',
-    'The object must match this shape exactly (every field is optional -- omit anything you have nothing real to say about; the tool fills sensible banking-domain defaults for whatever is missing):',
-    '{',
-    '  "productName": string, "featureName": string, "author": string,',
-    '  "businessUnit": string, "documentVersion": string, "status": string,',
-    '  "priority": "Critical"|"High"|"Medium"|"Low", "targetRelease": string, "classification": string,',
-    '  "businessNeed": string, "currentState": string, "futureState": string,',
-    '  "businessObjectives": string[],',
-    '  "successMetrics": [{ "metric": string, "target": string, "measurement": string }],',
-    '  "stakeholders": [{ "name": string, "role": string, "raci": "R"|"A"|"C"|"I" }],',
-    '  "elicitationTechniques": string[], "elicitationSources": string[],',
-    '  "inScope": string[], "outOfScope": string[], "channelsAffected": string[],',
-    '  "assumptions": string[], "constraints": string[], "dependencies": string[],',
-    '  "regulatoryRequirements": [{ "regulation": string, "requirement": string }],',
-    '  "businessRules": string[],',
-    '  "epics": [{ "title": string, "description": string, "userStories": [{',
-    '      "title": string, "priority": "Critical"|"High"|"Medium"|"Low",',
-    '      "narrative": { "asA": string, "iWant": string, "soThat": string },',
-    '      "acceptanceCriteria": [{ "given": string, "when": string, "then": string }] }] }],',
-    '  "nonFunctionalRequirements": [{ "category": string, "items": string[] }],',
-    '  "dataRequirements": [{ "entity": string, "description": string, "sourceSystem": string, "sensitivity": string }],',
-    '  "risks": [{ "risk": string, "impact": "High"|"Medium"|"Low", "likelihood": "High"|"Medium"|"Low", "mitigation": string }],',
-    '  "approvers": [{ "name": string, "role": string }],',
-    '  "glossary": [{ "term": string, "definition": string }],',
-    '  "openQuestions": string[]',
-    '}',
-    '"openQuestions" is not part of the generated document -- it is read by the tool to show the analyst what to confirm before finalizing. Use it for every assumption or gap you had to guess at; never silently invent acceptance criteria, metrics, or edge cases to fill a gap instead of flagging it there.',
-  ].join('\n');
-
-  var AI_DRAFT_SYSTEM_PROMPT = [
-    'You are a senior product requirements analyst specializing in banking and fintech products, working to BABOK v3. Your job is to turn a rough feature idea and notes into structured input for a BABOK-aligned Product Requirements Document.',
-    '',
-    'Treat the following as missing whenever the notes do not cover them: target user segment and primary use case, business goal or success metric, regulatory constraints, platform/channel scope, dependencies on other teams or features. Never fabricate acceptance criteria, metrics, or edge cases to paper over a gap -- write plausible placeholder content if you must, but also list the same point in "openQuestions" so a human can confirm it.',
-    '',
-    'Write for a technical audience -- developers and QA, not stakeholders who need convincing. Every string is a flat, testable statement. Cut filler ("this will greatly improve...", "in order to..."). If a sentence can be said in one clause, do not use two.',
-    '',
-    'For every "regulatoryRequirements" entry, and for any business rule or acceptance criterion that touches payment data, card data, KYC/AML, or personal financial information, name the specific framework it satisfies (KYC, AML, PCI DSS, PSD2/SCA, GDPR, Basel III, SOX, or a named local banking regulation) and the concrete control (tokenization, SCA, encryption at rest, audit logging, etc.). Do not force a regulatory tag onto something with no compliance angle.',
-    '',
-    AI_SCHEMA_DOC,
-  ].join('\n');
-
-  var AI_CRITIQUE_SYSTEM_PROMPT = [
-    'You are reviewing a draft banking/fintech PRD data structure (JSON) before it ships. You will be shown the original brief and the draft JSON. Check for:',
-    '1. Any acceptance criterion, user story, or requirement that is not independently testable.',
-    '2. Any user story that violates INVEST (Independent, Negotiable, Valuable, Estimable, Small, Testable).',
-    '3. Any place the draft assumed something the brief never stated, without flagging it in "openQuestions".',
-    '4. Any missing edge case (auth failure, partial/inconsistent state, downstream outage, limit or threshold breach) a QA engineer would flag in review, for the epics actually present.',
-    '5. Verbosity, filler, or vague language that violates the flat-testable-statement rule.',
-    '',
-    'Revise the JSON to fix what you find -- do not just describe the issues.',
-    '',
-    AI_SCHEMA_DOC,
-  ].join('\n');
-
-  function aiExtractJson(text) {
-    var t = text.trim();
-    var fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (fence) t = fence[1].trim();
-    var start = t.indexOf('{');
-    var end = t.lastIndexOf('}');
-    if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1);
-    return JSON.parse(t);
-  }
-
-  async function aiCallClaude(apiKey, systemPrompt, userContent) {
-    var res = await fetch(AI_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        max_tokens: 8000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userContent }],
-      }),
-    });
-    if (!res.ok) {
-      var errText = await res.text();
-      var msg = 'AI request failed (HTTP ' + res.status + ')';
-      try { msg = JSON.parse(errText).error.message || msg; } catch (parseErr) { /* keep default msg */ }
-      throw new Error(msg);
-    }
-    var data = await res.json();
-    if (data.stop_reason === 'refusal') throw new Error('Claude declined this request.');
-    var textBlock = (data.content || []).filter(function (b) { return b.type === 'text'; })[0];
-    if (!textBlock) throw new Error('No text in the AI response.');
-    return textBlock.text;
-  }
-
-  function aiEscapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-
-  function aiPopulateForm(data) {
-    var scalarFields = {
-      'f-productName': 'productName', 'f-featureName': 'featureName', 'f-author': 'author',
-      'f-businessUnit': 'businessUnit', 'f-documentVersion': 'documentVersion', 'f-status': 'status',
-      'f-targetRelease': 'targetRelease', 'f-classification': 'classification',
-      'f-businessNeed': 'businessNeed', 'f-currentState': 'currentState', 'f-futureState': 'futureState',
-    };
-    Object.keys(scalarFields).forEach(function (id) {
-      var el = document.getElementById(id);
-      var val = data[scalarFields[id]];
-      if (!el.value.trim() && val) el.value = val;
-    });
-    var priorityEl = document.getElementById('f-priority');
-    if (!priorityEl.value && data.priority) priorityEl.value = data.priority;
-
-    var listReps = ['businessObjectives', 'elicitationTechniques', 'elicitationSources', 'inScope',
-      'outOfScope', 'channelsAffected', 'assumptions', 'constraints', 'dependencies', 'businessRules'];
-    listReps.forEach(function (key) {
-      if (reps[key].getValues().length === 0 && Array.isArray(data[key])) {
-        data[key].forEach(function (v) { if (v) reps[key].addRow(v); });
-      }
-    });
-
-    var objectReps = ['successMetrics', 'stakeholders', 'regulatoryRequirements', 'dataRequirements',
-      'risks', 'approvers', 'glossary'];
-    objectReps.forEach(function (key) {
-      if (reps[key].getValues().length === 0 && Array.isArray(data[key])) {
-        data[key].forEach(function (row) { reps[key].addRow(row); });
-      }
-    });
-
-    if (getNfrData().length === 0 && Array.isArray(data.nonFunctionalRequirements) && data.nonFunctionalRequirements.length) {
-      data.nonFunctionalRequirements.forEach(function (n) { addNfrBlock(n.category, (n.items && n.items.length) ? n.items : ['']); });
-    }
-
-    if (getEpicsData().length === 0 && Array.isArray(data.epics) && data.epics.length) {
-      epicsContainer.innerHTML = '';
-      epicBlocks = [];
-      data.epics.forEach(function (e) { addEpicBlock(e); });
-    }
-
-    updateReqStatus();
-  }
-
-  var aiKeyInput = document.getElementById('ai-api-key');
-  var aiNotesInput = document.getElementById('ai-notes');
-  var aiDraftBtn = document.getElementById('ai-draft-btn');
-  var aiStatusEl = document.getElementById('ai-status');
-
-  try {
-    var savedAiKey = localStorage.getItem('prdAiApiKey');
-    if (savedAiKey) aiKeyInput.value = savedAiKey;
-  } catch (storageErr) { /* localStorage unavailable -- ignore */ }
-
-  aiKeyInput.addEventListener('change', function () {
-    try { localStorage.setItem('prdAiApiKey', aiKeyInput.value.trim()); } catch (storageErr) { /* ignore */ }
-  });
-
-  aiDraftBtn.addEventListener('click', async function () {
-    var apiKey = aiKeyInput.value.trim();
-    var notes = aiNotesInput.value.trim();
-    if (!apiKey) {
-      aiStatusEl.textContent = 'Enter your Anthropic API key first.';
-      aiStatusEl.className = 'error';
-      return;
-    }
-    if (!notes) {
-      aiStatusEl.textContent = 'Add a few notes about the feature first.';
-      aiStatusEl.className = 'error';
-      return;
-    }
-
-    aiDraftBtn.disabled = true;
-    aiDraftBtn.textContent = 'Drafting…';
-    aiStatusEl.className = '';
-    aiStatusEl.textContent = 'Drafting with Claude…';
-
-    try {
-      var existing = gatherOptions();
-      var briefText = 'EXISTING_INPUT (already confirmed -- treat as authoritative, do not contradict it, fill only what is missing):\n'
-        + JSON.stringify(existing, null, 2)
-        + '\n\nROUGH NOTES:\n' + notes;
-
-      var draftText = await aiCallClaude(apiKey, AI_DRAFT_SYSTEM_PROMPT, briefText);
-      var draft = aiExtractJson(draftText);
-
-      aiStatusEl.textContent = 'Reviewing draft…';
-      var critiqueInput = 'ORIGINAL BRIEF:\n' + briefText + '\n\nDRAFT JSON:\n' + JSON.stringify(draft, null, 2);
-      var finalText = await aiCallClaude(apiKey, AI_CRITIQUE_SYSTEM_PROMPT, critiqueInput);
-      var final = aiExtractJson(finalText);
-
-      aiPopulateForm(final);
-
-      if (Array.isArray(final.openQuestions) && final.openQuestions.length) {
-        aiStatusEl.innerHTML = 'Draft applied. Open questions to confirm before generating:<br>'
-          + final.openQuestions.map(function (q) { return '&bull; ' + aiEscapeHtml(q); }).join('<br>');
-      } else {
-        aiStatusEl.textContent = 'Draft applied -- review the fields below, then click Generate PRD.';
-      }
-      aiStatusEl.className = 'ok';
-    } catch (err) {
-      aiStatusEl.textContent = (err && err.message) || 'AI draft failed.';
-      aiStatusEl.className = 'error';
-    } finally {
-      aiDraftBtn.disabled = false;
-      aiDraftBtn.textContent = 'Draft with AI';
-    }
-  });
 })();
 </script>
 
